@@ -13,12 +13,21 @@ A portable, zero-dependency tool for code signature hashing and task optimizatio
 ## Quick Start
 
 ```bash
-# Install taskhash in your repo
-./taskhash init
+# Download and install taskhash, then initialize in your repo
+curl -fsSL https://raw.githubusercontent.com/bizkite-co/taskhash/main/install.sh | bash
 
-# Or with just config (no hook):
-./taskhash init --no-hook
+# Or if you have the source:
+./install.sh
+
+# Or if taskhash is already in your PATH:
+taskhash init
 ```
+
+This will:
+1. Download/install the taskhash binary
+2. Detect your framework (Python, JS/TS, Go, Rust, Ruby)
+3. Create `taskhash.json` with sensible defaults
+4. Install the pre-commit hook
 
 ## Commands
 
