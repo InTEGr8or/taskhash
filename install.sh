@@ -26,10 +26,10 @@ esac
 # Try to get latest release info
 if [ "$TASKHASH_VERSION" = "latest" ]; then
     echo "Fetching latest version..."
-    TASKHASH_VERSION=$(curl -s https://api.github.com/repos/bizkite-co/taskhash/releases/latest 2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/') || TASKHASH_VERSION="v1.0.0"
+    TASKHASH_VERSION=$(curl -s https://api.github.com/repos/InTEGr8or/taskhash/releases/latest 2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/') || TASKHASH_VERSION="v1.0.0"
 fi
 
-TASKHASH_URL="https://github.com/bizkite-co/taskhash/releases/download/$TASKHASH_VERSION/taskhash_${OS}_${ARCH}"
+TASKHASH_URL="https://github.com/InTEGr8or/taskhash/releases/download/$TASKHASH_VERSION/taskhash_${OS}_${ARCH}"
 
 if command -v curl &> /dev/null; then
     DOWNLOAD_CMD="curl -fsSL"
