@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
+REPO="${REPO:-InTEGr8or/taskhash}"
 TASKHASH_VERSION="${TASKHASH_VERSION:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-$PWD}"
 TASKHASH_BIN="$INSTALL_DIR/taskhash"
 
-echo "Installing taskhash v$TASKHASH_VERSION..."
+echo "Installing taskhash v$TASKHASH_VERSION to $INSTALL_DIR..."
 
 # Detect OS and architecture
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -26,37 +27,42 @@ esac
 # Try to get latest release info
 if [ "$TASKHASH_VERSION" = "latest" ]; then
     echo "Fetching latest version..."
-    TASKHASH_VERSION=$(curl -s https://api.github.com/repos/InTEGr8or/taskhash/releases/latest 2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/') || TASKHASH_VERSION="v1.0.0"
+    TASKHASH_VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | grep '"tag_name"' | sed 's/.*"v\?\([^"]*\)".*/\1/') || TASKHASH_VERSION="v1.0.0"
 fi
 
-TASKHASH_URL="https://github.com/InTEGr8or/taskhash/releases/download/$TASKHASH_VERSION/taskhash_${OS}_${ARCH}"
+TASKHASH_URL="https://github.com/$REPO/releases/download/$TASKHASH_VERSION/taskhash_${OS}_${ARCH}"
 
-if command -v curl &> /dev/null; then
-    DOWNLOAD_CMD="curl -fsSL"
-elif command -v wget &> /dev/null; then
-    DOWNLOAD_CMD="wget -qO-"
-else
-    echo "Error: curl or wget required"
-    exit 1
-fi
-
-# Download binary
-echo "Downloading from $TASKHASH_URL..."
-if [ -f "$TASKHASH_BIN" ]; then
-    mv "$TASKHASH_BIN" "${TASKHASH_BIN}.old"
-fi
-
-$DOWNLOAD_CMD "$TASKHASH_URL" -o "$TASKHASH_BIN" || {
-    echo "Failed to download. Building from source..."
-    if ! command -v go &> /dev/null; then
-        echo "Error: Go required to build from source"
-        exit 1
+download_binary() {
+    echo "Downloading from $TASKHASH_URL..."
+    if command -v curl &> /dev/null; then
+        curl -fsSL "$TASKHASH_URL" -o "$TASKHASH_BIN"
+    elif command -v wget &> /dev/null; then
+        wget -q "$TASKHASH_URL" -O "$TASKHASH_BIN"
+    else
+        echo "Error: curl or wget required"
+        return 1
     fi
-    go build -o "$TASKHASH_BIN" taskhash.go 2>/dev/null || {
-        echo "Error: Could not build. Make sure you're in the taskhash source directory."
-        exit 1
-    }
 }
+
+build_from_source() {
+    echo "Building from source..."
+    local tmpdir=$(mktemp -d)
+    git clone --depth 1 "https://github.com/$REPO.git" "$tmpdir/taskhash" 2>/dev/null || {
+        echo "Error: git required to build from source"
+        rm -rf "$tmpdir"
+        return 1
+    }
+    (cd "$tmpdir/taskhash" && go build -o "$TASKHASH_BIN" .)
+    rm -rf "$tmpdir"
+}
+
+# Backup existing
+if [ -f "$TASKHASH_BIN" ]; then
+    cp "$TASKHASH_BIN" "${TASKHASH_BIN}.old"
+fi
+
+# Try download first, fall back to source
+download_binary || build_from_source
 
 chmod +x "$TASKHASH_BIN"
 rm -f "${TASKHASH_BIN}.old"
@@ -69,4 +75,4 @@ echo "Initializing taskhash..."
 "$TASKHASH_BIN" init
 
 echo ""
-echo "Done! Run 'taskhash --help' for usage."
+echo "Done! Run './taskhash --help' for usage."
