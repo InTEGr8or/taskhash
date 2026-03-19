@@ -1,42 +1,134 @@
 # TaskHash
 
-A portable, zero-dependency tool for code signature hashing and task bypass. It helps prevent redundant execution of long-running tasks (like linting or testing) by only running them when relevant source files have changed.
+A portable, zero-dependency tool for code signature hashing and task optimization. It prevents redundant execution of linting, testing, and other tasks by tracking code hashes.
 
 ## Features
 
-- **Portable**: Compiled Go binary works on Linux, macOS, and Windows.
-- **Configurable**: Define what to include or exclude in a simple `taskhash.json` file.
-- **Task-aware**: Tracks separate signatures for different tasks (e.g., `lint`, `test`, `build`).
-- **PowerShell Friendly**: Easy to integrate into Windows CI/CD pipelines.
+- **Portable**: Compiled Go binary works on Linux, macOS, and Windows
+- **Auto-detection**: Automatically detects Python, JavaScript/TypeScript, Go, Rust, and Ruby projects
+- **Task-aware**: Tracks separate hashes for different tasks (lint, test, build)
+- **Per-task includes**: Each task can hash different files for optimal skipping
+- **Pre-commit hook**: Optional automatic installation of git hooks
+
+## Quick Start
+
+```bash
+# Install taskhash in your repo
+./taskhash init
+
+# Or with just config (no hook):
+./taskhash init --no-hook
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `taskhash init` | Detect framework, create config, install hook |
+| `taskhash init --no-hook` | Detect framework, create config only |
+| `taskhash enforce` | Run all tasks sequentially (lint → test → build) |
+| `taskhash check <task>` | Check if task hash matches |
+| `taskhash update <task>` | Update task hash manually |
+| `taskhash install-hook` | Install pre-commit hook |
+| `taskhash remove-hook` | Remove pre-commit hook |
+| `taskhash reinstall-hook` | Reinstall pre-commit hook |
 
 ## Configuration (`taskhash.json`)
 
 ```json
 {
-  "includes": ["src", "Makefile"],
-  "excludes": [".git", "dist", "docs", ".code_signatures.json"],
-  "store": ".code_signatures.json"
+  "includes": ["src", "lib"],
+  "excludes": [".git", "node_modules", "__pycache__"],
+  "store": ".code_signatures.json",
+  "runner": "make",
+  "tasks": {
+    "lint": {},
+    "test": {"includes": ["src", "tests"]},
+    "build": {}
+  }
 }
 ```
 
-## Usage
+### Options
 
-### Check if task should run
-```bash
-taskhash --task lint --check
-if [ $? -ne 0 ]; then
-  # Run lint command
-  taskhash --task lint --update
-fi
+| Field | Description | Default |
+|-------|-------------|---------|
+| `includes` | Files/dirs to hash (global) | `["src"]` |
+| `excludes` | Files/dirs to skip | `.git`, `node_modules`, etc. |
+| `store` | Where to save hashes | `.code_signatures.json` |
+| `runner` | Command prefix | `make` |
+| `tasks` | Task definitions | `lint`, `test`, `build` |
+
+### Per-task Options
+
+```json
+{
+  "tasks": {
+    "lint": {},
+    "test": {"includes": ["src", "tests"]},
+    "build": {}
+  }
+}
 ```
 
-### PowerShell Example
-```powershell
-./taskhash.exe --task lint --check
-if ($LASTEXITCODE -ne 0) {
-    # Run lint command
-    ./taskhash.exe --task lint --update
-}
+Tasks inherit global `includes` if not overridden. Commands are `{runner} {task}` (e.g., `make lint`).
+
+## Output Examples
+
+First run (no hashes):
+```
+lint: no hash found, running make lint...
+test: no hash found, running make test...
+build: no hash found, running make build...
+```
+
+Subsequent runs (hashes match):
+```
+lint: hash match (0f6048a4), skipping.
+test: hash match (0f6048a4), skipping.
+build: hash match (0f6048a4), skipping.
+```
+
+Code changed:
+```
+lint: hash mismatch (was abc123, now def456), running make lint...
+lint: hash updated (def456)
+test: hash mismatch (was abc123, now def456), running make test...
+test: hash updated (def456)
+```
+
+## Framework Detection
+
+`taskhash init` auto-detects:
+
+| Framework | Includes |
+|-----------|----------|
+| Python (pyproject.toml) | `src`, `tests`, `pyproject.toml` |
+| JavaScript/TypeScript (package.json) | `src`, `package.json` |
+| Go (go.mod) | `.` (everything) |
+| Rust (Cargo.toml) | `src`, `Cargo.toml` |
+| Ruby (Gemfile) | `lib`, `Gemfile` |
+
+## Makefile Integration
+
+Update existing targets to use taskhash:
+
+```makefile
+lint:
+	@if taskhash check lint; then \
+		echo "Lint hash matches. Skipping."; \
+	else \
+		ruff check . --fix && mypy . && \
+		taskhash update lint; \
+	fi
+
+test: lint
+	@if taskhash check test; then \
+		echo "Test hash matches. Skipping."; \
+	else \
+		pytest tests/ && \
+		taskhash update test; \
+	fi
 ```
 
 ## Compilation
