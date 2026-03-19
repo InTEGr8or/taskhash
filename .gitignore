@@ -4,5 +4,7 @@ taskhash
 taskhash.exe
 coverage.out
 coverage.html
+*.prof
+*.test
 taskhash.json
 .code_signatures.json

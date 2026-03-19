@@ -342,3 +342,61 @@ func loadConfigFromPath(path string) (*Config, error) {
 	}
 	return &config, nil
 }
+
+// =============================================================================
+// Benchmarks
+// =============================================================================
+
+func BenchmarkCalculateSignature(b *testing.B) {
+	tmpDir := b.TempDir()
+
+	for i := 0; i < 100; i++ {
+		f := filepath.Join(tmpDir, "file"+string(rune('0'+i%10))+".txt")
+		os.WriteFile(f, []byte("content for benchmarking "+string(rune('0'+i))), 0644)
+	}
+
+	includes := []string{tmpDir}
+	excludes := []string{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		calculateSignature(includes, excludes)
+	}
+}
+
+func BenchmarkLoadSignatures(b *testing.B) {
+	tmpDir := b.TempDir()
+	storePath := filepath.Join(tmpDir, "signatures.json")
+
+	sigs := map[string]string{
+		"lint":  "abc123abc123abc123abc123abcd",
+		"test":  "def456def456def456def456abcd",
+		"build": "ghi789ghi789ghi789ghi789abcd",
+	}
+	saveSignatures(storePath, sigs)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		loadSignatures(storePath)
+	}
+}
+
+func BenchmarkConfigGetIncludesForTask(b *testing.B) {
+	config := &Config{
+		Includes: []string{"src", "lib", "cmd", "pkg", "internal"},
+		Tasks: map[string]Task{
+			"lint":  {Includes: []string{"src", "lib"}},
+			"test":  {Includes: []string{"src", "tests"}},
+			"build": {},
+			"fmt":   {},
+			"vet":   {},
+		},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, task := range []string{"lint", "test", "build", "fmt", "vet"} {
+			_ = config.GetIncludesForTask(task)
+		}
+	}
+}

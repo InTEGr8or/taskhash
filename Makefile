@@ -25,7 +25,7 @@ build: ## Build the binary
 	go build -o taskhash taskhash.go
 
 clean: ## Clean build artifacts
-	rm -f taskhash coverage.out coverage.html
+	rm -f taskhash coverage.out coverage.html *.prof
 
 # ==============================================================================
 # Development Tasks
@@ -34,4 +34,18 @@ clean: ## Clean build artifacts
 install: build ## Install taskhash globally (requires sudo)
 	sudo mv taskhash /usr/local/bin/taskhash
 
-.PHONY: help fmt lint test test-cover build clean install
+prof: ## Run CPU and memory profiling
+	@echo "Running benchmarks and generating profiles..."
+	go test -bench=. -benchtime=500ms -cpuprofile=cpu.prof -memprofile=mem.prof ./...
+	@echo ""
+	@echo "Profiles generated: cpu.prof, mem.prof"
+	@echo "Analyze with:"
+	@echo "  go tool pprof cpu.prof    # CPU analysis"
+	@echo "  go tool pprof mem.prof    # Memory analysis"
+	@echo ""
+	@echo "Inside pprof:"
+	@echo "  top 10        # Top consumers"
+	@echo "  list <func>   # Source for function"
+	@echo "  web           # Open browser (if available)"
+
+.PHONY: help fmt lint test test-cover build clean install prof
