@@ -14,7 +14,7 @@ A portable, zero-dependency tool for code signature hashing and task optimizatio
 
 ```bash
 # Download and install taskhash, then initialize in your repo
-curl -fsSL https://raw.githubusercontent.com/InTEGr8or/taskhash/main/install.sh | bash
+curl -H "Cache-Control: no-cache" -fsSL https://raw.githubusercontent.com/InTEGr8or/taskhash/main/install.sh | bash
 
 # Or if you have the source:
 ./install.sh
