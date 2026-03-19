@@ -111,6 +111,8 @@ func main() {
 		runInit()
 	case "enforce":
 		runEnforce()
+	case "up":
+		runUpdateBinary()
 	case "check":
 		if len(os.Args) < 3 {
 			fmt.Fprintf(os.Stderr, "%s Error: task name required\n", redBold("✗"))
@@ -151,6 +153,7 @@ func printHelp() {
 	fmt.Println("  init              Detect framework, create config, install hook")
 	fmt.Println("  init --no-hook    Detect framework, create config only")
 	fmt.Println("  enforce           Run all tasks (lint → test → ...)")
+	fmt.Println("  up               Update taskhash binary")
 	fmt.Println("  check <task>     Check if task hash matches")
 	fmt.Println("  update <task>    Update task hash manually")
 	fmt.Println("  install-hook     Install pre-commit hook")
@@ -617,4 +620,25 @@ func runRemoveHook() {
 	}
 
 	success("Hook removed from " + cyanBold(hookPath))
+}
+
+func runUpdateBinary() {
+	executable, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s Error: could not determine current executable\n", redBold("✗"))
+		os.Exit(1)
+	}
+
+	running("Updating taskhash...")
+
+	runCmd := exec.Command("go", "build", "-o", executable, ".")
+	runCmd.Stdout = os.Stdout
+	runCmd.Stderr = os.Stderr
+
+	if err := runCmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "%s Build failed\n", redBold("✗"))
+		os.Exit(1)
+	}
+
+	success("taskhash updated")
 }
