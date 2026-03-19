@@ -629,16 +629,90 @@ func runUpdateBinary() {
 		os.Exit(1)
 	}
 
-	running("Updating taskhash...")
+	repo := "InTEGr8or/taskhash"
 
-	runCmd := exec.Command("go", "build", "-o", executable, ".")
-	runCmd.Stdout = os.Stdout
-	runCmd.Stderr = os.Stderr
+	osName := runtime.GOOS
+	arch := runtime.GOARCH
 
-	if err := runCmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "%s Build failed\n", redBold("✗"))
+	switch arch {
+	case "x86_64":
+		arch = "amd64"
+	case "aarch64":
+		arch = "arm64"
+	}
+
+	switch osName {
+	case "windows":
+		osName = "windows"
+	case "darwin":
+		osName = "darwin"
+	case "linux":
+		osName = "linux"
+	default:
+		fmt.Fprintf(os.Stderr, "%s Unsupported OS: %s\n", redBold("✗"), osName)
 		os.Exit(1)
 	}
 
-	success("taskhash updated")
+	running("Fetching latest version...")
+
+	fetchCmd := exec.Command("curl", "-s", fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo))
+	fetchCmd.Stdout = nil
+	fetchCmd.Stderr = nil
+
+	output, err := fetchCmd.Output()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s Failed to fetch release info: %v\n", redBold("✗"), err)
+		os.Exit(1)
+	}
+
+	version := "v1.0.0"
+	if strings.Contains(string(output), "\"tag_name\"") {
+		start := strings.Index(string(output), "\"tag_name\"") + 12
+		end := start + 20
+		if end < len(output) {
+			version = string(output[start:end])
+			version = strings.TrimPrefix(version, "v")
+			version = strings.TrimSpace(version[:strings.Index(version, "\"")])
+		}
+	}
+
+	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/taskhash_%s_%s", repo, version, osName, arch)
+
+	if runtime.GOOS == "windows" {
+		executable += ".exe"
+		url += ".exe"
+	}
+
+	tmpFile, err := os.CreateTemp("", "taskhash-update-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s Failed to create temp file: %v\n", redBold("✗"), err)
+		os.Exit(1)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+
+	running(fmt.Sprintf("Downloading v%s...", version))
+
+	dlCmd := exec.Command("curl", "-fsSL", url)
+	dlCmd.Stdout, _ = os.Create(tmpPath)
+	dlCmd.Stderr = nil
+
+	if err := dlCmd.Run(); err != nil {
+		os.Remove(tmpPath)
+		fmt.Fprintf(os.Stderr, "%s Download failed, trying to build from source...\n", yellowBold("!"))
+
+		buildCmd := exec.Command("go", "build", "-o", executable, ".")
+		buildCmd.Stdout = os.Stdout
+		buildCmd.Stderr = os.Stderr
+		if err := buildCmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "%s Build failed\n", redBold("✗"))
+			os.Exit(1)
+		}
+		success("taskhash built from source")
+		return
+	}
+
+	os.Chmod(tmpPath, 0755)
+	os.Rename(tmpPath, executable)
+	success(fmt.Sprintf("taskhash updated to v%s", version))
 }
