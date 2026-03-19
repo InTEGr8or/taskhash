@@ -14,6 +14,67 @@ import (
 	"strings"
 )
 
+// =============================================================================
+// Output Formatting
+// =============================================================================
+
+const (
+	reset  = "\033[0m"
+	bold   = "\033[1m"
+	dim    = "\033[2m"
+	italic = "\033[3m"
+
+	red     = "\033[31m"
+	green   = "\033[32m"
+	yellow  = "\033[33m"
+	blue    = "\033[34m"
+	magenta = "\033[35m"
+	cyan    = "\033[36m"
+
+	gray = "\033[90m"
+)
+
+func color(c string) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	return c
+}
+
+func greenBold(s string) string  { return color(bold+green) + s + color(reset) }
+func redBold(s string) string    { return color(bold+red) + s + color(reset) }
+func yellowBold(s string) string { return color(bold+yellow) + s + color(reset) }
+func cyanBold(s string) string   { return color(bold+cyan) + s + color(reset) }
+func dimText(s string) string    { return color(dim) + s + color(reset) }
+func boldText(s string) string   { return color(bold) + s + color(reset) }
+
+func success(s string) { fmt.Println(greenBold("✓") + " " + s) }
+func failure(s string) { fmt.Println(redBold("✗") + " " + s) }
+func skipped(s string) { fmt.Println(dimText("○") + " " + dimText(s)) }
+func running(s string) { fmt.Print(cyanBold("→") + " " + s + "... ") }
+
+func printRow(cols ...string) {
+	fmt.Println(strings.Join(cols, "  "))
+}
+
+func printHeader(cells ...string) {
+	fmt.Println()
+	for _, cell := range cells {
+		fmt.Print(boldText(cell) + "  ")
+	}
+	fmt.Println()
+}
+
+func printKeyValue(key, value string) {
+	padding := 30
+	if len(key)+len(value) >= padding {
+		fmt.Printf("%s %s\n", boldText(key), value)
+	} else {
+		dots := strings.Repeat(".", padding-len(key)-len(value))
+		fmt.Printf("%s %s%s%s\n", boldText(key), dots, color(dim), value)
+	}
+}
+
 type Config struct {
 	Includes []string        `json:"includes"`
 	Excludes []string        `json:"excludes"`
@@ -52,15 +113,15 @@ func main() {
 		runEnforce()
 	case "check":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Error: task name required")
-			fmt.Fprintln(os.Stderr, "Usage: taskhash check <task>")
+			fmt.Fprintf(os.Stderr, "%s Error: task name required\n", redBold("✗"))
+			fmt.Fprintf(os.Stderr, "Usage: taskhash check %s<task>%s\n", cyanBold(""), reset)
 			os.Exit(1)
 		}
 		runCheck(os.Args[2])
 	case "update":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Error: task name required")
-			fmt.Fprintln(os.Stderr, "Usage: taskhash update <task>")
+			fmt.Fprintf(os.Stderr, "%s Error: task name required\n", redBold("✗"))
+			fmt.Fprintf(os.Stderr, "Usage: taskhash update %s<task>%s\n", cyanBold(""), reset)
 			os.Exit(1)
 		}
 		runUpdate(os.Args[2])
@@ -74,46 +135,33 @@ func main() {
 	case "--help", "-h", "help":
 		printHelp()
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
+		fmt.Fprintf(os.Stderr, "%s Unknown command: %s\n", redBold("✗"), cmd)
 		printHelp()
 		os.Exit(1)
 	}
 }
 
 func printHelp() {
-	fmt.Print(`taskhash - Code signature hashing for task optimization
-
-Usage:
-  taskhash <command> [options]
-
-Commands:
-  init                    Detect framework, create config, install hook
-  init --no-hook         Detect framework, create config only
-  enforce                 Run all tasks (lint → test → ...)
-  check <task>           Check if task hash matches
-  update <task>          Update task hash manually
-  install-hook           Install pre-commit hook
-  remove-hook            Remove pre-commit hook
-  reinstall-hook         Reinstall pre-commit hook
-  help                   Show this help
-
-Config (taskhash.json):
-{
-  "includes": ["src", "lib"],
-  "excludes": [".git", "node_modules"],
-  "store": ".code_signatures.json",
-  "runner": "make",
-  "tasks": {
-    "lint": {},
-    "test": {"includes": ["src", "tests"]},
-    "build": {}
-  }
-}
-
-Runner: Command prefix (default: make). Tasks run as "{runner} {task}".
-Tasks: Each task runs its command and tracks a separate hash.
-Per-task includes: Optional overrides for which files to hash.
-`)
+	fmt.Println(boldText("taskhash") + " " + dimText("Code signature hashing for task optimization"))
+	fmt.Println()
+	fmt.Println(boldText("Usage:"))
+	fmt.Println("  " + cyanBold("taskhash") + " <command> [options]")
+	fmt.Println()
+	fmt.Println(boldText("Commands:"))
+	fmt.Println("  init              Detect framework, create config, install hook")
+	fmt.Println("  init --no-hook    Detect framework, create config only")
+	fmt.Println("  enforce           Run all tasks (lint → test → ...)")
+	fmt.Println("  check <task>     Check if task hash matches")
+	fmt.Println("  update <task>    Update task hash manually")
+	fmt.Println("  install-hook     Install pre-commit hook")
+	fmt.Println("  remove-hook      Remove pre-commit hook")
+	fmt.Println("  reinstall-hook    Reinstall pre-commit hook")
+	fmt.Println("  help              Show this help")
+	fmt.Println()
+	fmt.Println(boldText("Configuration:"))
+	fmt.Println("  Runner: Command prefix (default: make)")
+	fmt.Println("  Tasks: Each task runs \"{runner} {task}\"")
+	fmt.Println("  Includes: Files/dirs to hash (per-task overrides supported)")
 }
 
 func loadConfig() (*Config, error) {
@@ -224,20 +272,27 @@ func runInit() {
 	config := detectFramework()
 	path := "taskhash.json"
 	if err := saveConfig(config.Config, path); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s Error writing config: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Detected: %s\n", config.detectedFramework)
-	fmt.Printf("Includes: %s\n", strings.Join(config.Config.Includes, ", "))
-	fmt.Printf("Runner: %s\n", config.Config.Runner)
+	fmt.Println()
+	fmt.Println(boldText("taskhash") + dimText(" initialization"))
+	fmt.Println(strings.Repeat("─", 50))
+	printKeyValue("Framework", cyanBold(config.detectedFramework))
+	printKeyValue("Runner", config.Config.Runner)
+	printKeyValue("Includes", strings.Join(config.Config.Includes, ", "))
+
 	taskNames := make([]string, 0, len(config.Config.Tasks))
 	for name := range config.Config.Tasks {
 		taskNames = append(taskNames, name)
 	}
 	sort.Strings(taskNames)
-	fmt.Printf("Tasks: %s\n", strings.Join(taskNames, ", "))
-	fmt.Printf("Config written to %s\n", path)
+	printKeyValue("Tasks", strings.Join(taskNames, ", "))
+
+	success("Config written to " + cyanBold(path))
+	fmt.Println(strings.Repeat("─", 50))
+	fmt.Println()
 
 	if !noHook {
 		runInstallHook()
@@ -335,13 +390,13 @@ func uniqueStrings(input []string) []string {
 func runEnforce() {
 	config, err := loadConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s Error: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
 	signatures, err := loadSignatures(config.Store)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading signatures: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s Error loading signatures: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
@@ -363,11 +418,16 @@ func runEnforce() {
 		}
 	}
 
+	fmt.Println()
+	fmt.Println(boldText("taskhash") + dimText(" running tasks..."))
+	fmt.Println(strings.Repeat("─", 50))
+
+	failed := false
 	for _, taskName := range orderedTasks {
 		includes := config.GetIncludesForTask(taskName)
 		currentSig, err := calculateSignature(includes, config.Excludes)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error calculating signature for %s: %v\n", taskName, err)
+			fmt.Fprintf(os.Stderr, "%s Error calculating signature for %s: %v\n", redBold("✗"), taskName, err)
 			os.Exit(1)
 		}
 
@@ -380,16 +440,17 @@ func runEnforce() {
 		}
 
 		if prevSig == currentSig {
-			fmt.Printf("%s: hash match (%s), skipping.\n", taskName, shortCurrent)
+			skipped(taskName + dimText(" hash matches"))
 		} else {
 			shortPrev := prevSig
 			if len(shortPrev) > 8 {
 				shortPrev = prevSig[:8]
 			}
 			if prevSig == "" {
-				fmt.Printf("%s: no hash found, running %s...\n", taskName, cmd)
+				fmt.Printf("%s %s %s\n", cyanBold("→"), boldText(taskName), dimText("no hash, running..."))
 			} else {
-				fmt.Printf("%s: hash mismatch (was %s, now %s), running %s...\n", taskName, shortPrev, shortCurrent, cmd)
+				fmt.Printf("%s %s %s %s\n", cyanBold("→"), boldText(taskName),
+					dimText("changed"), dimText("("+shortPrev+" → "+shortCurrent+")"))
 			}
 
 			shell := "/bin/bash"
@@ -403,16 +464,23 @@ func runEnforce() {
 			runCmd.Stdin = os.Stdin
 
 			if err := runCmd.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "taskhash: %s failed\n", taskName)
-				os.Exit(1)
-			}
+				fmt.Printf("%s %s %s\n", redBold("✗"), boldText(taskName), redBold("failed"))
+				failed = true
+			} else {
+				fmt.Printf("%s %s %s\n", greenBold("✓"), boldText(taskName), dimText("passed"))
 
-			signatures[taskName] = currentSig
-			if err := saveSignatures(config.Store, signatures); err != nil {
-				fmt.Fprintf(os.Stderr, "Error saving signatures: %v\n", err)
-				os.Exit(1)
+				signatures[taskName] = currentSig
+				if err := saveSignatures(config.Store, signatures); err != nil {
+					fmt.Fprintf(os.Stderr, "%s Error saving signatures: %v\n", redBold("✗"), err)
+					os.Exit(1)
+				}
 			}
 		}
+	}
+
+	fmt.Println(strings.Repeat("─", 50))
+	if failed {
+		os.Exit(1)
 	}
 }
 
@@ -498,7 +566,7 @@ func runInstallHook() {
 
 	hookDir := filepath.Dir(hookPath)
 	if err := os.MkdirAll(hookDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating hooks directory: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s Error creating hooks directory: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
@@ -513,40 +581,40 @@ func runInstallHook() {
 `, executable)
 
 	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing hook: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s Error writing hook: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Hook installed at %s\n", hookPath)
+	success("Hook installed at " + cyanBold(hookPath))
 }
 
 func runRemoveHook() {
 	hookPath, err := getHookPath()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s Error: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
 	if _, err := os.Stat(hookPath); os.IsNotExist(err) {
-		fmt.Printf("No hook found at %s\n", hookPath)
+		skipped("No hook found")
 		return
 	}
 
 	content, err := os.ReadFile(hookPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading hook: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s Error reading hook: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
 	if !strings.Contains(string(content), "# Installed by taskhash") {
-		fmt.Fprintf(os.Stderr, "Hook at %s was not installed by taskhash. Manual removal required.\n", hookPath)
+		fmt.Fprintf(os.Stderr, "%s Hook was not installed by taskhash. Manual removal required.\n", yellowBold("!"))
 		os.Exit(1)
 	}
 
 	if err := os.Remove(hookPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Error removing hook: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s Error removing hook: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Hook removed from %s\n", hookPath)
+	success("Hook removed from " + cyanBold(hookPath))
 }
