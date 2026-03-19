@@ -1,0 +1,8 @@
+issue-agent/
+issue-agent
+taskhash
+taskhash.exe
+coverage.out
+coverage.html
+taskhash.json
+.code_signatures.json
