@@ -159,7 +159,7 @@ func calculateSignature(config *Config) (string, error) {
 			if err != nil {
 				return nil // Skip errors
 			}
-			if info.IsDir() {
+			if info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 				return nil
 			}
 
