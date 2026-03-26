@@ -34,13 +34,32 @@ This will:
 | Command | Description |
 |---------|-------------|
 | `taskhash init` | Detect framework, create config, install hook |
-| `taskhash init --no-hook` | Detect framework, create config only |
 | `taskhash enforce` | Run all tasks sequentially (lint → test → build) |
+| `taskhash status` | Show hash match status for all tasks |
 | `taskhash check <task>` | Check if task hash matches |
 | `taskhash update <task>` | Update task hash manually |
-| `taskhash install-hook` | Install pre-commit hook |
-| `taskhash remove-hook` | Remove pre-commit hook |
-| `taskhash reinstall-hook` | Reinstall pre-commit hook |
+| `taskhash install <path>` | Copy taskhash to a specific location (e.g. tools/taskhash/taskhash) |
+| `taskhash install-hook` | Install pre-commit and post-commit hooks |
+| `taskhash remove-hook` | Remove git hooks |
+| `taskhash up` | Upgrade taskhash to latest version |
+
+## Installation & Recommendations
+
+For a consistent experience across team members, we recommend "vendoring" the `taskhash` binary into your repository:
+
+1. **Tools Directory (Recommended):** Place it in `tools/taskhash/taskhash`. This keeps your project root clean and ensures any script or Makefile can find it reliably.
+   ```bash
+   ./taskhash install tools/taskhash/taskhash
+   ```
+2. **Global (Path):** Install to `/usr/local/bin` if you want it available everywhere on your machine.
+   ```bash
+   sudo make install
+   ```
+3. **Project Root:** Keep it in the root as `./taskhash` for simple, single-repo use.
+
+### Bypassing Hooks
+
+The `taskhash install-hook` command installs both a `pre-commit` and a `post-commit` hook. While Git allows bypassing `pre-commit` with the `--no-verify` flag, the `post-commit` hook will still run and issue a warning if the code signatures are stale, ensuring that bypassed checks are always detected.
 
 ## Configuration (`taskhash.json`)
 

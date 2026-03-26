@@ -87,6 +87,10 @@ type Task struct {
 	Includes []string `json:"includes,omitempty"`
 }
 
+type GithubRelease struct {
+	TagName string `json:"tag_name"`
+}
+
 func (c *Config) GetIncludesForTask(taskName string) []string {
 	if task, ok := c.Tasks[taskName]; ok && len(task.Includes) > 0 {
 		return task.Includes
@@ -113,6 +117,15 @@ func main() {
 		runEnforce()
 	case "up":
 		runUpdateBinary()
+	case "status":
+		runStatus()
+	case "install":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "%s Error: path required\n", redBold("✗"))
+			fmt.Fprintf(os.Stderr, "Usage: taskhash install %s<path>%s\n", cyanBold(""), reset)
+			os.Exit(1)
+		}
+		runInstall(os.Args[2])
 	case "check":
 		if len(os.Args) < 3 {
 			fmt.Fprintf(os.Stderr, "%s Error: task name required\n", redBold("✗"))
@@ -154,6 +167,8 @@ func printHelp() {
 	fmt.Println("  init --no-hook    Detect framework, create config only")
 	fmt.Println("  enforce           Run all tasks (lint → test → ...)")
 	fmt.Println("  up               Update taskhash binary")
+	fmt.Println("  status           Check all task hashes (exit non-zero if mismatch)")
+	fmt.Println("  install <path>   Install taskhash to a specific path")
 	fmt.Println("  check <task>     Check if task hash matches")
 	fmt.Println("  update <task>    Update task hash manually")
 	fmt.Println("  install-hook     Install pre-commit hook")
@@ -578,17 +593,33 @@ func runInstallHook() {
 		executable = "./taskhash"
 	}
 
-	content := fmt.Sprintf(`#!/bin/bash
+	// Install pre-commit
+	preCommitContent := fmt.Sprintf(`#!/bin/bash
 # Installed by taskhash
 %s enforce
 `, executable)
 
-	if err := os.WriteFile(hookPath, []byte(content), 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "%s Error writing hook: %v\n", redBold("✗"), err)
+	if err := os.WriteFile(hookPath, []byte(preCommitContent), 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "%s Error writing pre-commit hook: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
-	success("Hook installed at " + cyanBold(hookPath))
+	// Install post-commit (doesn't get skipped by --no-verify)
+	postCommitPath := filepath.Join(hookDir, "post-commit")
+	postCommitContent := fmt.Sprintf(`#!/bin/bash
+# Installed by taskhash
+# This check cannot be skipped by --no-verify
+%s check lint || {
+	echo -e "\033[33m! Warning: commit was made without running tasks (pre-commit was bypassed)\033[0m"
+}
+`, executable)
+
+	if err := os.WriteFile(postCommitPath, []byte(postCommitContent), 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "%s Error writing post-commit hook: %v\n", redBold("✗"), err)
+		os.Exit(1)
+	}
+
+	success("Hooks installed at " + cyanBold(hookDir))
 }
 
 func runRemoveHook() {
@@ -598,28 +629,98 @@ func runRemoveHook() {
 		os.Exit(1)
 	}
 
-	if _, err := os.Stat(hookPath); os.IsNotExist(err) {
-		skipped("No hook found")
-		return
-	}
+	hookDir := filepath.Dir(hookPath)
+	for _, hook := range []string{"pre-commit", "post-commit"} {
+		path := filepath.Join(hookDir, hook)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			continue
+		}
 
-	content, err := os.ReadFile(hookPath)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		if !strings.Contains(string(content), "# Installed by taskhash") {
+			fmt.Fprintf(os.Stderr, "%s %s was not installed by taskhash. Manual removal required.\n", yellowBold("!"), hook)
+			continue
+		}
+
+		if err := os.Remove(path); err != nil {
+			fmt.Fprintf(os.Stderr, "%s Error removing %s: %v\n", redBold("✗"), hook, err)
+		} else {
+			success(hook + " removed")
+		}
+	}
+}
+
+func runStatus() {
+	config, err := loadConfig()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s Error reading hook: %v\n", redBold("✗"), err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	if !strings.Contains(string(content), "# Installed by taskhash") {
-		fmt.Fprintf(os.Stderr, "%s Hook was not installed by taskhash. Manual removal required.\n", yellowBold("!"))
+	signatures, err := loadSignatures(config.Store)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading signatures: %v\n", err)
 		os.Exit(1)
 	}
 
-	if err := os.Remove(hookPath); err != nil {
-		fmt.Fprintf(os.Stderr, "%s Error removing hook: %v\n", redBold("✗"), err)
+	mismatched := false
+	for taskName := range config.Tasks {
+		includes := config.GetIncludesForTask(taskName)
+		currentSig, err := calculateSignature(includes, config.Excludes)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error calculating signature: %v\n", err)
+			os.Exit(1)
+		}
+
+		if signatures[taskName] != currentSig {
+			failure(taskName + " hash mismatch")
+			mismatched = true
+		} else {
+			success(taskName + " hash matches")
+		}
+	}
+
+	if mismatched {
+		os.Exit(1)
+	}
+}
+
+func runInstall(path string) {
+	executable, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	success("Hook removed from " + cyanBold(hookPath))
+	input, err := os.Open(executable)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer input.Close()
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	output, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer output.Close()
+
+	if _, err := io.Copy(output, input); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	success("taskhash installed to " + cyanBold(path))
 }
 
 func runUpdateBinary() {
@@ -656,30 +757,26 @@ func runUpdateBinary() {
 	running("Fetching latest version...")
 
 	fetchCmd := exec.Command("curl", "-s", fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo))
-	fetchCmd.Stdout = nil
-	fetchCmd.Stderr = nil
-
 	output, err := fetchCmd.Output()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s Failed to fetch release info: %v\n", redBold("✗"), err)
 		os.Exit(1)
 	}
 
-	version := "v1.0.0"
-	if strings.Contains(string(output), "\"tag_name\"") {
-		start := strings.Index(string(output), "\"tag_name\"") + 12
-		end := start + 20
-		if end < len(output) {
-			version = string(output[start:end])
-			version = strings.TrimPrefix(version, "v")
-			version = strings.TrimSpace(version[:strings.Index(version, "\"")])
-		}
+	var release GithubRelease
+	if err := json.Unmarshal(output, &release); err != nil {
+		fmt.Fprintf(os.Stderr, "%s Failed to parse release info: %v\n", redBold("✗"), err)
+		os.Exit(1)
 	}
 
-	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/taskhash_%s_%s", repo, version, osName, arch)
+	version := strings.TrimPrefix(release.TagName, "v")
+
+	url := fmt.Sprintf("https://github.com/%s/releases/download/v%s/taskhash_%s_%s", repo, version, osName, arch)
 
 	if runtime.GOOS == "windows" {
-		executable += ".exe"
+		if !strings.HasSuffix(executable, ".exe") {
+			executable += ".exe"
+		}
 		url += ".exe"
 	}
 
@@ -694,10 +791,16 @@ func runUpdateBinary() {
 	running(fmt.Sprintf("Downloading v%s...", version))
 
 	dlCmd := exec.Command("curl", "-fsSL", url)
-	dlCmd.Stdout, _ = os.Create(tmpPath)
+	dlFile, err := os.Create(tmpPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s Failed to create temp download file: %v\n", redBold("✗"), err)
+		os.Exit(1)
+	}
+	dlCmd.Stdout = dlFile
 	dlCmd.Stderr = nil
 
 	if err := dlCmd.Run(); err != nil {
+		dlFile.Close()
 		os.Remove(tmpPath)
 		fmt.Fprintf(os.Stderr, "%s Download failed, trying to build from source...\n", yellowBold("!"))
 
@@ -711,8 +814,24 @@ func runUpdateBinary() {
 		success("taskhash built from source")
 		return
 	}
+	dlFile.Close()
 
 	os.Chmod(tmpPath, 0755)
-	os.Rename(tmpPath, executable)
+
+	if err := os.Rename(tmpPath, executable); err != nil {
+		// Fallback for some environments where Rename across devices might fail
+		input, err := os.ReadFile(tmpPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s Failed to read temp file: %v\n", redBold("✗"), err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(executable, input, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "%s Failed to update executable: %v\n", redBold("✗"), err)
+			os.Exit(1)
+		}
+		os.Remove(tmpPath)
+	}
+
 	success(fmt.Sprintf("taskhash updated to v%s", version))
 }
+
