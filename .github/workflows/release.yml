@@ -1,0 +1,29 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.1'
+      - name: Build
+        run: |
+          OUTPUT_NAME="taskhash_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" == "windows" ]; then
+            OUTPUT_NAME="${OUTPUT_NAME}.exe"
+          fi
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o "$OUTPUT_NAME" taskhash.go
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskhash-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: taskhash_${{ matrix.goos }}_${{ matrix.goarch }}*

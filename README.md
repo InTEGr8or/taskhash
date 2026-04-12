@@ -12,15 +12,23 @@ A portable, zero-dependency tool for code signature hashing and task optimizatio
 
 ## Quick Start
 
+### Linux/macOS (Bash)
 ```bash
 # Download and install taskhash, then initialize in your repo
 curl -H "Cache-Control: no-cache" -fsSL https://raw.githubusercontent.com/InTEGr8or/taskhash/main/install.sh | bash
+```
+
+### Windows (PowerShell)
+```powershell
+# Download and install taskhash, then initialize in your repo
+iwr -useb https://raw.githubusercontent.com/InTEGr8or/taskhash/main/install.ps1 | iex
+```
 
 # Or if you have the source:
-./install.sh
-
-# Or if taskhash is already in your PATH:
-taskhash init
+```bash
+./install.sh # Linux/macOS
+# or
+.\install.ps1 # Windows
 ```
 
 This will:
@@ -28,6 +36,7 @@ This will:
 2. Detect your framework (Python, JS/TS, Go, Rust, Ruby)
 3. Create `taskhash.json` with sensible defaults
 4. Install the pre-commit hook
+
 
 ## Commands
 
